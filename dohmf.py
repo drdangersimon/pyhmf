@@ -4,6 +4,7 @@ import multiprocessing as mp
 
 class config:
 	nthreads = 16
+	chunksize = 10
 
 def get_data(ndat=1000,npix=100,ncens=5,xmax=10,err0=0.1):
 	xgrid = np.linspace(-xmax,xmax,npix)
@@ -63,10 +64,14 @@ def copy_as_shared(mat):
 	return shmat
 
 class data_struct:
-	dat=None
-	edat=None
-	As=None
-	Gs=None
+	dat = None
+	edat = None
+	As = None
+	Gs = None
+	GsOld = None	
+	ncomp = None
+	npix = None
+	eps = None 
 	
 def doAstep(i):
 	# we use the fact that dat,edat aren't changed on the way,
@@ -96,7 +101,32 @@ def doGstep(j):
 	Gs[j,:] = newGj
 	return delta
 
-def get_hmf(dat,edat,vecs, nit = 5):
+def doGstepSmooth(j):
+	dat,edat = data_struct.dat,data_struct.edat
+	Gsold,Gs,As = data_struct.Gsold,data_struct.Gs,data_struct.As
+	npix = data_struct.npix
+	ncomp = data_struct.ncomp
+	eps = data_struct.eps	
+
+	Covj = np.matrix(np.diag(1./edat[:,j]**2))
+	if j>0 and j<(npix-1):
+		Aj = As.T * Covj * As + 2* eps * np.identity(ncomp)
+		Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps * (Gsold[j-1,:] + Gsold[j+1,:]).T
+	elif j==0:
+		Aj = As.T * Covj * As + eps * np.identity(ncomp)
+		Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps *  Gsold[1,:].T
+	elif j==npix-1:
+		Aj = As.T * Covj * As + eps * np.identity(ncomp)
+		Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps *  Gsold[npix-2,:].T
+	Gj = scipy.linalg.solve(Aj, Fj)
+	Gs[j,:]=Gj.flatten()
+	newGj = Gj.flatten()
+	oldGj = Gs[j,:]
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / oldGj))
+	Gs[j,:] = newGj
+	return delta
+
+def get_hmf(dat, edat, vecs, nit=5):
 	"""
 	dat should have the shape Nobs,Npix
 	edat the same thing
@@ -114,10 +144,12 @@ def get_hmf(dat,edat,vecs, nit = 5):
 	data_struct.edat = edat
 	data_struct.Gs = Gs
 	data_struct.As = As
+
 	pool = mp.Pool(config.nthreads)
+
 	for i in range(nit):
-		deltas1 = pool.map(doAstep, range(ndat))
-		deltas2 = pool.map(doGstep, range(npix))
+		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
+		deltas2 = pool.map(doGstep, range(npix), chunksize=config.chunksize)
 		print scipy.nanmax(deltas1),scipy.nanmax(deltas2)
 
 	# orthogonalize
@@ -128,14 +160,14 @@ def get_hmf(dat,edat,vecs, nit = 5):
 	return Gs, As
 
 
-def orthogonalize(G,A):
-	eigv, neweigvec = scipy.linalg.eigh(G.T  * G)
+def orthogonalize(G, A):
+	eigv, neweigvec = scipy.linalg.eigh(G.T * G)
 	neweigvec = neweigvec[:,::-1]                          # reorder in descending eigv
-	newGs = (G*np.matrix(neweigvec)) # reproject
-	newAs = (A*np.matrix(neweigvec))
+	newGs = (G * np.matrix(neweigvec)) # reproject
+	newAs = (A * np.matrix(neweigvec))
 	return newGs, newAs
 
-def get_hmf_smooth(dat,edat,vecs,eps=0.01):
+def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01):
 	"""
 	dat should have the shape Nobs,Npix
 	edat the same thing
@@ -144,32 +176,32 @@ def get_hmf_smooth(dat,edat,vecs,eps=0.01):
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
-	As = np.matrix(np.zeros((ndat,ncomp)))
-	Gs = np.matrix(vecs)
+	#As = np.matrix(np.zeros((ndat,ncomp)))
+	#Gs = np.matrix(vecs)
+	As = shared_zeros_matrix(ndat,ncomp)
+	Gs = copy_as_shared(vecs)
+	Gsold = shared_zeros_matrix(Gs.shape[0],Gs.shape[1])
+	data_struct.dat = dat
+	data_struct.edat = edat
+	data_struct.Gs = Gs
+	data_struct.Gsold = Gsold
+	data_struct.As = As
+	data_struct.eps = eps
+	data_struct.ncomp = ncomp
+	data_struct.npix = npix
+	pool = mp.Pool(config.nthreads)
 
-	#a step
-	for i in range(ndat):
-		Fi = np.matrix(dat[i]/edat[i]**2)*Gs
-		Covi = np.matrix(np.diag(1./edat[i]**2))
-		Gi = Gs.T*Covi*Gs
-		Ai = scipy.linalg.solve(Gi, Fi.T)
-		As[i,:]=Ai.flatten()
-	
-	Gsold = Gs.copy()
-	#g step 
-	for j in range(npix):
-		Covj = np.matrix(np.diag(1./edat[:,j]**2))
-		if j>0 and j<(npix-1):
-			Aj = As.T * Covj * As + 2* eps * np.identity(ncomp)
-			Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps * (Gsold[j-1,:] + Gsold[j+1,:]).T
-		elif j==0:
-			Aj = As.T * Covj * As + eps * np.identity(ncomp)
-			Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps *  Gsold[1,:].T
-		elif j==npix-1:
-			Aj = As.T * Covj * As + eps * np.identity(ncomp)
-			Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps *  Gsold[npix-2,:].T
-		Gj = scipy.linalg.solve(Aj, Fj)
-		Gs[j,:]=Gj.flatten()
+	for i in range(nit):
+		#a step
+		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
+
+		data_struct.Gsold, data_struct.Gs = data_struct.Gs, data_struct.Gsold
+		# swapping variables, because we going to update Gs while still using
+		# original Gs from A step
+
+		#g step
+		deltas2 = pool.map(doGstepSmooth, range(npix), chunksize=config.chunksize)
+		
 	Gs, As = orthogonalize(Gs, As)
 
 	return Gs, As
@@ -179,7 +211,7 @@ def rescaler(Gs, As):
 	return Gs*np.matrix(eigvecs).T,As*np.matrix(eigvecs).T
 	
 def full_loop():
-	arr,earr = get_data.get_data(npix=101)
-	eigva,eigve = get_data.get_pca(arr)
-	neweigve, As= get_data.get_hmf(arr, earr, eigve[:,-5:])
+	arr,earr = get_data(npix=101)
+	eigva,eigve = get_pca(arr)
+	neweigve, As= get_hmf(arr, earr, eigve[:,-5:])
 	
