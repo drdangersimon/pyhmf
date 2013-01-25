@@ -1,4 +1,9 @@
-import numpy as np,scipy,numpy.random as nprand,scipy.linalg,ctypes,scipy
+import numpy as np
+import scipy
+import numpy.random as nprand
+import scipy.linalg
+import ctypes
+import scipy
 import multiprocessing as mp
 
 
@@ -6,160 +11,172 @@ class config:
 	nthreads = 16
 	chunksize = 10
 
+
 def preprocess_data_pca(dat, edat):
 	ndat, npix = dat.shape
-	meandat = np.mean(dat,axis=0)
-	meandat = meandat/((meandat**2).sum())**.5
-	proj = np.dot(dat,meandat) # projection
-	shrink = edat.mean(axis=0)[None,:]
+	meandat = np.mean(dat, axis=0)
+	meandat = meandat / ((meandat ** 2).sum()) ** .5
+	proj = np.dot(dat, meandat)	 # projection
+	shrink = edat.mean(axis=0)[None, :]
 	return shrink, meandat
+
 
 def get_firstvec(dat, edat, pc=10):
 	shrink, meandat = preprocess_data_pca(dat, edat)
 	import nipals
-	eigs = nipals.doit(dat/shrink, pc-1)
+	eigs = nipals.doit(dat / shrink, pc - 1)
 #	eigs = scipy.linalg.svd(eigs)[2][:(pc-1)] # orthonorm
-	eigs = eigs*shrink # scaling fixed
-	eigs = np.vstack((meandat[None,:],eigs)) # add mean spec to the eigens
-	eigs = scipy.linalg.svd(eigs)[2][:(pc)] # orthonorm
+	eigs = eigs * shrink  # scaling fixed
+	eigs = np.vstack((meandat[None, :], eigs))	# add mean spec to the eigens
+	eigs = scipy.linalg.svd(eigs)[2][:(pc)]	 # orthonorm
 	return eigs
 
-	
-def get_data(ndat=1000,npix=100,ncens=5,xmax=10,err0=0.1, outlfrac=0, outlerrmult=10):
-	xgrid = np.linspace(-xmax,xmax,npix)
-	#cens = nprand.uniform(-xmax,xmin,size=ncens)
-	cens = np.linspace(-xmax,xmax,ncens)
 
-	cenids = nprand.randint(ncens,size=ndat)
+def get_data(ndat=1000, npix=100, ncens=5, xmax=10, err0=0.1, outlfrac=0, outlerrmult=10):
+	xgrid = np.linspace(-xmax, xmax, npix)
+	# cens = nprand.uniform(-xmax,xmin,size=ncens)
+	cens = np.linspace(-xmax, xmax, ncens)
+
+	cenids = nprand.randint(ncens, size=ndat)
 	sig = 1
-	arr=[]
-	earr=[]
+	arr = []
+	earr = []
 
 	for i in range(ndat):
 		curerr0 = nprand.exponential(err0)
-		errs0 = curerr0+ np.zeros(npix)
-		#errs0 = np.random.uniform(0,err0,size=npix)
-		errs = np.random.normal(0,errs0,size=npix)
-		xind=np.random.uniform(size=npix)<outlfrac		
+		errs0 = curerr0 + np.zeros(npix)
+		# errs0 = np.random.uniform(0,err0,size=npix)
+		errs = np.random.normal(0, errs0, size=npix)
+		xind = np.random.uniform(size=npix) < outlfrac
 		errs[xind] = errs[xind] * outlerrmult
-		y=scipy.stats.norm.pdf(xgrid,cens[cenids[i]],sig)+errs
+		y = scipy.stats.norm.pdf(xgrid, cens[cenids[i]], sig) + errs
 		arr.append(y)
 		earr.append(errs0)
-	return np.array(arr),np.array(earr)
+	return np.array(arr), np.array(earr)
 
 
 def get_pca(arr):
 	arrm = np.matrix(arr)
-	eigvals, eigvecs = scipy.linalg.eigh(arrm.T*arrm)
-	return eigvals,eigvecs
+	eigvals, eigvecs = scipy.linalg.eigh(arrm.T * arrm)
+	return eigvals, eigvecs
 
-def project_only(dat, edat, vecs):	
+
+def project_only(dat, edat, vecs):
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
 	g0 = np.matrix(vecs)
-	#a step
-	As = np.matrix(np.zeros((ndat,ncomp)))
+	# a step
+	As = np.matrix(np.zeros((ndat, ncomp)))
 	Gs = np.matrix(vecs)
 
 	for i in range(ndat):
-		Fi = np.matrix(dat[i]/edat[i]**2,copy=False)*Gs
-		Covi = np.matrix(np.diag(1./edat[i]**2,copy=False))
-		Gi = Gs.T*Covi*Gs
+		Fi = np.matrix(dat[i] / edat[i] ** 2, copy=False) * Gs
+		Covi = np.matrix(np.diag(1. / edat[i] ** 2, copy=False))
+		Gi = Gs.T * Covi * Gs
 		Ai = scipy.linalg.solve(Gi, Fi.T)
-		As[i,:]=Ai.flatten()
+		As[i, :] = Ai.flatten()
 	return As
 
+
 def shared_zeros_matrix(n1, n2):
-	shared_array_base = mp.Array(ctypes.c_double, n1*n2)
+	shared_array_base = mp.Array(ctypes.c_double, n1 * n2)
 	shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
-	shared_array = shared_array.reshape(n1,n2)
+	shared_array = shared_array.reshape(n1, n2)
 	shared_array = np.matrix(shared_array, copy=False)
-	return shared_array             
+	return shared_array
+
 
 def copy_as_shared(mat):
-	n1,n2 = mat.shape
-	shmat = shared_zeros_matrix(n1,n2)
-	shmat[:,:] = mat[:,:]
+	n1, n2 = mat.shape
+	shmat = shared_zeros_matrix(n1, n2)
+	shmat[:, :] = mat[:, :]
 	return shmat
+
 
 class data_struct:
 	dat = None
 	edat = None
 	As = None
 	Gs = None
-	GsOld = None	
+	GsOld = None
 	ncomp = None
 	npix = None
 	eps = None
-	
+
+
 def doAstep(i):
 	# we use the fact that dat,edat aren't changed on the way,
 	# so they shouldn't be copied to a different thread
-	dat,edat = data_struct.dat,data_struct.edat
-	Gs,As = data_struct.Gs,data_struct.As
-	Fi = np.matrix(dat[i]/edat[i]**2)*Gs
-	Covi = np.matrix(np.diag(1./edat[i]**2),copy=False)
-	Gi = Gs.T*Covi*Gs
+	dat, edat = data_struct.dat, data_struct.edat
+	Gs, As = data_struct.Gs, data_struct.As
+	Fi = np.matrix(dat[i] / edat[i] ** 2) * Gs
+	Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
+	Gi = Gs.T * Covi * Gs
 	Ai = scipy.linalg.solve(Gi, Fi.T)
 	newAi = Ai.flatten()
-	oldAi = As[i,:]
+	oldAi = As[i, :]
 	delta = scipy.nanmax(np.abs((newAi - oldAi) / (oldAi.max() + 1e-100)))
-	As[i,:] = newAi
+	As[i, :] = newAi
 	return delta
+
 
 def doGstep(j):
-	dat,edat=data_struct.dat,data_struct.edat
-	Gs,As = data_struct.Gs,data_struct.As
-	Covj = np.matrix(np.diag(1./edat[:,j]**2),copy=False)
+	dat, edat = data_struct.dat, data_struct.edat
+	Gs, As = data_struct.Gs, data_struct.As
+	Covj = np.matrix(np.diag(1. / edat[:, j] ** 2), copy=False)
 	Aj = As.T * Covj * As
-	Fj = As.T * np.matrix((dat/edat**2)[:,j],copy=False).T
+	Fj = As.T * np.matrix((dat / edat ** 2)[:, j], copy=False).T
 	Gj = scipy.linalg.solve(Aj, Fj)
 	newGj = Gj.flatten()
-	oldGj = Gs[j,:]
+	oldGj = Gs[j, :]
 	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max() + 1e-100)))
-	Gs[j,:] = newGj
+	Gs[j, :] = newGj
 	return delta
+
 
 def doGstepSmooth(j):
-	dat,edat = data_struct.dat,data_struct.edat
-	Gsold,Gs,As = data_struct.Gsold,data_struct.Gs,data_struct.As
+	dat, edat = data_struct.dat, data_struct.edat
+	Gsold, Gs, As = data_struct.Gsold, data_struct.Gs, data_struct.As
 	npix = data_struct.npix
 	ncomp = data_struct.ncomp
-	eps = data_struct.eps	
+	eps = data_struct.eps
 
-	Covj = np.matrix(np.diag(1./edat[:,j]**2))
-	if j>0 and j<(npix-1):
-		Aj = As.T * Covj * As + 2* eps * np.identity(ncomp)
-		Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps * (Gsold[j-1,:] + Gsold[j+1,:]).T
-	elif j==0:
+	Covj = np.matrix(np.diag(1. / edat[:, j] ** 2))
+	if j > 0 and j < (npix - 1):
+		Aj = As.T * Covj * As + 2 * eps * np.identity(ncomp)
+		Fj = As.T * np.matrix(
+			(dat / edat ** 2)[:, j]).T + eps * (Gsold[j - 1, :] + Gsold[j + 1, :]).T
+	elif j == 0:
 		Aj = As.T * Covj * As + eps * np.identity(ncomp)
-		Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps *  Gsold[1,:].T
-	elif j==npix-1:
+		Fj = As.T * np.matrix((dat / edat ** 2)[:, j]).T + eps * Gsold[1, :].T
+	elif j == npix - 1:
 		Aj = As.T * Covj * As + eps * np.identity(ncomp)
-		Fj = As.T * np.matrix((dat/edat**2)[:,j]).T + eps *  Gsold[npix-2,:].T
+		Fj = As.T * np.matrix((dat / edat ** 2)[:, j]).T + eps * \
+			Gsold[npix - 2, :].T
 	Gj = scipy.linalg.solve(Aj, Fj)
-	Gs[j,:]=Gj.flatten()
+	Gs[j, :] = Gj.flatten()
 	newGj = Gj.flatten()
-	oldGj = Gsold[j,:]
-	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max()+1e-100)))
-	Gs[j,:] = newGj
+	oldGj = Gsold[j, :]
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max() + 1e-100)))
+	Gs[j, :] = newGj
 	return delta
+
 
 def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 	"""
 	dat should have the shape Nobs,Npix
 	edat the same thing
 	vecs should have the shape (npix, ncomp)
-	returns the eigen vectors and the projections vector	
+	returns the eigen vectors and the projections vector
 	"""
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
-	#a step
+	# a step
 #	As = np.matrix(np.zeros((ndat,ncomp)))
 #	Gs = np.matrix(vecs)
-	As = shared_zeros_matrix(ndat,ncomp)
+	As = shared_zeros_matrix(ndat, ncomp)
 	Gs = copy_as_shared(vecs)
 	data_struct.dat = dat
 	data_struct.edat = edat
@@ -171,7 +188,7 @@ def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 	for i in range(nit):
 		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
 		deltas2 = pool.map(doGstep, range(npix), chunksize=config.chunksize)
-		curconv = scipy.nanmax([scipy.nanmax(deltas1),scipy.nanmax(deltas2)])
+		curconv = scipy.nanmax([scipy.nanmax(deltas1), scipy.nanmax(deltas2)])
 		print curconv
 		if curconv < convergence:
 			break
@@ -187,25 +204,27 @@ def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 def orthogonalize(G, A):
 	# do the orthogonalization and reordering
 	eigv, neweigvec = scipy.linalg.eigh(G.T * G)
-	neweigvec = neweigvec[:,::-1]                          # reorder in descending eigv
-	newGs = (G * np.matrix(neweigvec)) # reproject
+	neweigvec = neweigvec[:, ::-1]
+		# reorder in descending eigv
+	newGs = (G * np.matrix(neweigvec))	# reproject
 	newAs = (A * np.matrix(neweigvec))
 	return newGs, newAs
+
 
 def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 	"""
 	dat should have the shape Nobs,Npix
 	edat the same thing
 	vecs should have the shape (npix, ncomp)
-	returns the eigen vectors and the projections vector	
+	returns the eigen vectors and the projections vector
 	"""
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
-	As = shared_zeros_matrix(ndat,ncomp)
+	As = shared_zeros_matrix(ndat, ncomp)
 	Gs = copy_as_shared(vecs)
 
-	Gsold = shared_zeros_matrix(Gs.shape[0],Gs.shape[1])
+	Gsold = shared_zeros_matrix(Gs.shape[0], Gs.shape[1])
 	data_struct.dat = dat
 	data_struct.edat = edat
 	data_struct.Gs = Gs
@@ -216,12 +235,12 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 	data_struct.npix = npix
 
 	for i in range(nit):
-		#a step
+		# a step
 		pool = mp.Pool(config.nthreads)
 		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
 		pool.close()
 		pool.join()
-		
+
 		data_struct.Gsold, data_struct.Gs = data_struct.Gs, data_struct.Gsold
 		# swapping variables, because we going to update Gs while still using
 		# original Gs from A step
@@ -230,24 +249,26 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 		pool = mp.Pool(config.nthreads)
 
 		# g step
-		deltas2 = pool.map(doGstepSmooth, range(npix), chunksize=config.chunksize)
+		deltas2 = pool.map(
+			doGstepSmooth, range(npix), chunksize=config.chunksize)
 		pool.close()
 		pool.join()
 
-		curconv = scipy.nanmax([scipy.nanmax(deltas1),scipy.nanmax(deltas2)])
+		curconv = scipy.nanmax([scipy.nanmax(deltas1), scipy.nanmax(deltas2)])
 		print curconv
 		if curconv < convergence:
 			break
 
-	Gs, As = orthogonalize(Gs, As) 
+	Gs, As = orthogonalize(Gs, As)
 	return Gs, As
 
+
 def rescaler(Gs, As):
-	eigvals, eigvecs =scipy.linalg.eigh(As.T*As)
-	return Gs*np.matrix(eigvecs).T,As*np.matrix(eigvecs).T
-	
+	eigvals, eigvecs = scipy.linalg.eigh(As.T * As)
+	return Gs * np.matrix(eigvecs).T, As * np.matrix(eigvecs).T
+
+
 def full_loop():
-	arr,earr = get_data(npix=101)
-	eigva,eigve = get_pca(arr)
-	neweigve, As= get_hmf(arr, earr, eigve[:,-5:])
-	
+	arr, earr = get_data(npix=101)
+	eigva, eigve = get_pca(arr)
+	neweigve, As = get_hmf(arr, earr, eigve[:, -5:])
