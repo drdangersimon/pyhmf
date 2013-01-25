@@ -104,7 +104,7 @@ def doAstep(i):
 	Ai = scipy.linalg.solve(Gi, Fi.T)
 	newAi = Ai.flatten()
 	oldAi = As[i,:]
-	delta = scipy.nanmax(np.abs((newAi - oldAi) / oldAi))
+	delta = scipy.nanmax(np.abs((newAi - oldAi) / (oldAi.max() + 1e-100)))
 	As[i,:] = newAi
 	return delta
 
@@ -117,7 +117,7 @@ def doGstep(j):
 	Gj = scipy.linalg.solve(Aj, Fj)
 	newGj = Gj.flatten()
 	oldGj = Gs[j,:]
-	delta = scipy.nanmax(np.abs((newGj - oldGj) / oldGj))
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max() + 1e-100)))
 	Gs[j,:] = newGj
 	return delta
 
@@ -142,7 +142,7 @@ def doGstepSmooth(j):
 	Gs[j,:]=Gj.flatten()
 	newGj = Gj.flatten()
 	oldGj = Gsold[j,:]
-	delta = scipy.nanmax(np.abs((newGj - oldGj) / oldGj))
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max()+ 1e-100)))
 	Gs[j,:] = newGj
 	return delta
 
