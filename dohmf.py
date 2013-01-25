@@ -185,18 +185,22 @@ def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 	data_struct.Gs = Gs
 	data_struct.As = As
 
-	pool = mp.Pool(config.nthreads)
 
 	for i in range(nit):
+		pool = mp.Pool(config.nthreads)
 		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
+		pool.close()
+		pool.join()
+		pool = mp.Pool(config.nthreads)
+		
 		deltas2 = pool.map(doGstep, range(npix), chunksize=config.chunksize)
+		pool.close()
+		pool.join()
+
 		curconv = scipy.nanmax([scipy.nanmax(deltas1), scipy.nanmax(deltas2)])
 		print curconv
 		if curconv < convergence:
 			break
-
-	pool.close()
-	pool.join()
 
 	# orthogonalize
 	Gs, As = orthogonalize(Gs, As)
