@@ -6,7 +6,26 @@ class config:
 	nthreads = 16
 	chunksize = 10
 
-def get_data(ndat=1000,npix=100,ncens=5,xmax=10,err0=0.1):
+def preprocess_data_pca(dat, edat):
+	ndat, npix = dat.shape
+	meandat = np.mean(dat,axis=0)
+	meandat = meandat/((meandat**2).sum())**.5
+	proj = np.dot(dat,meandat) # projection
+	shrink = edat.mean(axis=0)[None,:]
+	return shrink, meandat
+
+def get_firstvec(dat, edat, pc=10):
+	shrink, meandat = preprocess_data_pca(dat, edat)
+	import nipals
+	eigs = nipals.doit(dat/shrink, pc-1)
+#	eigs = scipy.linalg.svd(eigs)[2][:(pc-1)] # orthonorm
+	eigs = eigs*shrink # scaling fixed
+	eigs = np.vstack((meandat[None,:],eigs)) # add mean spec to the eigens
+	eigs = scipy.linalg.svd(eigs)[2][:(pc)] # orthonorm
+	return eigs
+
+	
+def get_data(ndat=1000,npix=100,ncens=5,xmax=10,err0=0.1, outlfrac=0, outlerrmult=10):
 	xgrid = np.linspace(-xmax,xmax,npix)
 	#cens = nprand.uniform(-xmax,xmin,size=ncens)
 	cens = np.linspace(-xmax,xmax,ncens)
@@ -21,16 +40,17 @@ def get_data(ndat=1000,npix=100,ncens=5,xmax=10,err0=0.1):
 		errs0 = curerr0+ np.zeros(npix)
 		#errs0 = np.random.uniform(0,err0,size=npix)
 		errs = np.random.normal(0,errs0,size=npix)
-
+		xind=np.random.uniform(size=npix)<outlfrac		
+		errs[xind] = errs[xind] * outlerrmult
 		y=scipy.stats.norm.pdf(xgrid,cens[cenids[i]],sig)+errs
 		arr.append(y)
 		earr.append(errs0)
-		
 	return np.array(arr),np.array(earr)
 
+
 def get_pca(arr):
-	arrm=np.matrix(arr)
-	eigvals, eigvecs =scipy.linalg.eigh(arrm.T*arrm)
+	arrm = np.matrix(arr)
+	eigvals, eigvecs = scipy.linalg.eigh(arrm.T*arrm)
 	return eigvals,eigvecs
 
 def project_only(dat, edat, vecs):	
@@ -121,7 +141,7 @@ def doGstepSmooth(j):
 	Gj = scipy.linalg.solve(Aj, Fj)
 	Gs[j,:]=Gj.flatten()
 	newGj = Gj.flatten()
-	oldGj = Gs[j,:]
+	oldGj = Gsold[j,:]
 	delta = scipy.nanmax(np.abs((newGj - oldGj) / oldGj))
 	Gs[j,:] = newGj
 	return delta
@@ -131,6 +151,7 @@ def get_hmf(dat, edat, vecs, nit=5):
 	dat should have the shape Nobs,Npix
 	edat the same thing
 	vecs should have the shape (npix, ncomp)
+	returns the eigen vectors and the projections vector	
 	"""
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
@@ -150,17 +171,19 @@ def get_hmf(dat, edat, vecs, nit=5):
 	for i in range(nit):
 		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
 		deltas2 = pool.map(doGstep, range(npix), chunksize=config.chunksize)
-		print scipy.nanmax(deltas1),scipy.nanmax(deltas2)
+		convergence = scipy.nanmax(deltas1),scipy.nanmax(deltas2)
+		print convergence
 
-	# orthogonalize
 	pool.close()
 	pool.join()
 
+	# orthogonalize
 	Gs, As = orthogonalize(Gs, As)
 	return Gs, As
 
 
 def orthogonalize(G, A):
+	# do the orthogonalization and reordering
 	eigv, neweigvec = scipy.linalg.eigh(G.T * G)
 	neweigvec = neweigvec[:,::-1]                          # reorder in descending eigv
 	newGs = (G * np.matrix(neweigvec)) # reproject
@@ -172,14 +195,14 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01):
 	dat should have the shape Nobs,Npix
 	edat the same thing
 	vecs should have the shape (npix, ncomp)
+	returns the eigen vectors and the projections vector	
 	"""
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
-	#As = np.matrix(np.zeros((ndat,ncomp)))
-	#Gs = np.matrix(vecs)
 	As = shared_zeros_matrix(ndat,ncomp)
 	Gs = copy_as_shared(vecs)
+
 	Gsold = shared_zeros_matrix(Gs.shape[0],Gs.shape[1])
 	data_struct.dat = dat
 	data_struct.edat = edat
@@ -189,21 +212,30 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01):
 	data_struct.eps = eps
 	data_struct.ncomp = ncomp
 	data_struct.npix = npix
-	pool = mp.Pool(config.nthreads)
 
 	for i in range(nit):
 		#a step
+		pool = mp.Pool(config.nthreads)
 		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
-
+		pool.close()
+		pool.join()
+		
 		data_struct.Gsold, data_struct.Gs = data_struct.Gs, data_struct.Gsold
 		# swapping variables, because we going to update Gs while still using
 		# original Gs from A step
 
-		#g step
-		deltas2 = pool.map(doGstepSmooth, range(npix), chunksize=config.chunksize)
-		
-	Gs, As = orthogonalize(Gs, As)
+		# we restart the pool because of the variable swap
+		pool = mp.Pool(config.nthreads)
 
+		# g step
+		deltas2 = pool.map(doGstepSmooth, range(npix), chunksize=config.chunksize)
+		pool.close()
+		pool.join()
+
+		convergence = scipy.nanmax(deltas1),scipy.nanmax(deltas2)
+		print convergence
+
+	Gs, As = orthogonalize(Gs, As) 
 	return Gs, As
 
 def rescaler(Gs, As):
