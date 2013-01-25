@@ -91,7 +91,7 @@ class data_struct:
 	GsOld = None	
 	ncomp = None
 	npix = None
-	eps = None 
+	eps = None
 	
 def doAstep(i):
 	# we use the fact that dat,edat aren't changed on the way,
@@ -142,11 +142,11 @@ def doGstepSmooth(j):
 	Gs[j,:]=Gj.flatten()
 	newGj = Gj.flatten()
 	oldGj = Gsold[j,:]
-	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max()+ 1e-100)))
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max()+1e-100)))
 	Gs[j,:] = newGj
 	return delta
 
-def get_hmf(dat, edat, vecs, nit=5):
+def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 	"""
 	dat should have the shape Nobs,Npix
 	edat the same thing
@@ -171,8 +171,10 @@ def get_hmf(dat, edat, vecs, nit=5):
 	for i in range(nit):
 		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
 		deltas2 = pool.map(doGstep, range(npix), chunksize=config.chunksize)
-		convergence = scipy.nanmax(deltas1),scipy.nanmax(deltas2)
-		print convergence
+		curconv = scipy.nanmax([scipy.nanmax(deltas1),scipy.nanmax(deltas2)])
+		print curconv
+		if curconv < convergence:
+			break
 
 	pool.close()
 	pool.join()
@@ -190,7 +192,7 @@ def orthogonalize(G, A):
 	newAs = (A * np.matrix(neweigvec))
 	return newGs, newAs
 
-def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01):
+def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 	"""
 	dat should have the shape Nobs,Npix
 	edat the same thing
@@ -232,8 +234,10 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01):
 		pool.close()
 		pool.join()
 
-		convergence = scipy.nanmax(deltas1),scipy.nanmax(deltas2)
-		print convergence
+		curconv = scipy.nanmax([scipy.nanmax(deltas1),scipy.nanmax(deltas2)])
+		print curconv
+		if curconv < convergence:
+			break
 
 	Gs, As = orthogonalize(Gs, As) 
 	return Gs, As
