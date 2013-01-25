@@ -63,8 +63,8 @@ def project_only(dat, edat, vecs):
 	Gs = np.matrix(vecs)
 
 	for i in range(ndat):
-		Fi = np.matrix(dat[i]/edat[i]**2)*Gs
-		Covi = np.matrix(np.diag(1./edat[i]**2))
+		Fi = np.matrix(dat[i]/edat[i]**2,copy=False)*Gs
+		Covi = np.matrix(np.diag(1./edat[i]**2,copy=False))
 		Gi = Gs.T*Covi*Gs
 		Ai = scipy.linalg.solve(Gi, Fi.T)
 		As[i,:]=Ai.flatten()
@@ -99,7 +99,7 @@ def doAstep(i):
 	dat,edat = data_struct.dat,data_struct.edat
 	Gs,As = data_struct.Gs,data_struct.As
 	Fi = np.matrix(dat[i]/edat[i]**2)*Gs
-	Covi = np.matrix(np.diag(1./edat[i]**2))
+	Covi = np.matrix(np.diag(1./edat[i]**2),copy=False)
 	Gi = Gs.T*Covi*Gs
 	Ai = scipy.linalg.solve(Gi, Fi.T)
 	newAi = Ai.flatten()
@@ -111,9 +111,9 @@ def doAstep(i):
 def doGstep(j):
 	dat,edat=data_struct.dat,data_struct.edat
 	Gs,As = data_struct.Gs,data_struct.As
-	Covj = np.matrix(np.diag(1./edat[:,j]**2))
+	Covj = np.matrix(np.diag(1./edat[:,j]**2),copy=False)
 	Aj = As.T * Covj * As
-	Fj = As.T * np.matrix((dat/edat**2)[:,j]).T
+	Fj = As.T * np.matrix((dat/edat**2)[:,j],copy=False).T
 	Gj = scipy.linalg.solve(Aj, Fj)
 	newGj = Gj.flatten()
 	oldGj = Gs[j,:]
