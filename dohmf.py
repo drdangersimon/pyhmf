@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 import numpy.random as nprand
 import scipy.linalg
+import scipy.stats
 import ctypes
 import scipy
 import multiprocessing as mp
@@ -110,10 +111,10 @@ def doAstep(i):
 	# so they shouldn't be copied to a different thread
 	dat, edat = data_struct.dat, data_struct.edat
 	Gs, As = data_struct.Gs, data_struct.As
-	Fi = np.matrix(dat[i] / edat[i] ** 2) * Gs
+	Fi = np.matrix(dat[i] / edat[i] ** 2, copy=False) * Gs
 	Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
 	Gi = Gs.T * Covi * Gs
-	Ai = scipy.linalg.solve(Gi, Fi.T)
+	Ai = scipy.linalg.solve(Gi, Fi.T, sym_pos=True)
 	newAi = Ai.flatten()
 	oldAi = As[i, :]
 	delta = scipy.nanmax(np.abs((newAi - oldAi) / (oldAi.max() + 1e-100)))
@@ -122,12 +123,13 @@ def doAstep(i):
 
 
 def doGstep(j):
+
 	dat, edat = data_struct.dat, data_struct.edat
 	Gs, As = data_struct.Gs, data_struct.As
 	Covj = np.matrix(np.diag(1. / edat[:, j] ** 2), copy=False)
 	Aj = As.T * Covj * As
-	Fj = As.T * np.matrix((dat / edat ** 2)[:, j], copy=False).T
-	Gj = scipy.linalg.solve(Aj, Fj)
+	Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T
+	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	newGj = Gj.flatten()
 	oldGj = Gs[j, :]
 	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max() + 1e-100)))
@@ -154,7 +156,7 @@ def doGstepSmooth(j):
 		Aj = As.T * Covj * As + eps * np.identity(ncomp)
 		Fj = As.T * np.matrix((dat / edat ** 2)[:, j]).T + eps * \
 			Gsold[npix - 2, :].T
-	Gj = scipy.linalg.solve(Aj, Fj)
+	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	Gs[j, :] = Gj.flatten()
 	newGj = Gj.flatten()
 	oldGj = Gsold[j, :]
