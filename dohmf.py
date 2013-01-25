@@ -114,6 +114,7 @@ def doAstep(i):
 	Fi = np.matrix(dat[i] / edat[i] ** 2, copy=False) * Gs
 	Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
 	Gi = Gs.T * Covi * Gs
+	del Covi
 	Ai = scipy.linalg.solve(Gi, Fi.T, sym_pos=True)
 	newAi = Ai.flatten()
 	oldAi = As[i, :]
@@ -128,6 +129,7 @@ def doGstep(j):
 	Gs, As = data_struct.Gs, data_struct.As
 	Covj = np.matrix(np.diag(1. / edat[:, j] ** 2), copy=False)
 	Aj = As.T * Covj * As
+	del Covj
 	Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	newGj = Gj.flatten()
@@ -151,11 +153,12 @@ def doGstepSmooth(j):
 			(dat / edat ** 2)[:, j]).T + eps * (Gsold[j - 1, :] + Gsold[j + 1, :]).T
 	elif j == 0:
 		Aj = As.T * Covj * As + eps * np.identity(ncomp)
-		Fj = As.T * np.matrix((dat / edat ** 2)[:, j]).T + eps * Gsold[1, :].T
+		Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T + eps * Gsold[1, :].T
 	elif j == npix - 1:
 		Aj = As.T * Covj * As + eps * np.identity(ncomp)
-		Fj = As.T * np.matrix((dat / edat ** 2)[:, j]).T + eps * \
+		Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T + eps * \
 			Gsold[npix - 2, :].T
+	del Covj
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	Gs[j, :] = Gj.flatten()
 	newGj = Gj.flatten()
