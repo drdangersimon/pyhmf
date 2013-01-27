@@ -73,7 +73,7 @@ def project_only(dat, edat, vecs):
 
 	for i in range(ndat):
 		Fi = np.matrix(dat[i] / edat[i] ** 2, copy=False) * Gs
-		Covi = np.matrix(np.diag(1. / edat[i] ** 2, copy=False))
+		Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
 		Gi = Gs.T * Covi * Gs
 		Ai = scipy.linalg.solve(Gi, Fi.T)
 		As[i, :] = Ai.flatten()
@@ -118,7 +118,7 @@ def doAstep(i):
 	Ai = scipy.linalg.solve(Gi, Fi.T, sym_pos=True)
 	newAi = Ai.flatten()
 	oldAi = As[i, :]
-	delta = scipy.nanmax(np.abs((newAi - oldAi) / (oldAi.max() + 1e-100)))
+	delta = scipy.nanmax(np.abs((newAi - oldAi) / (np.abs(oldAi).max() + 1e-100)))
 	As[i, :] = newAi
 	return delta
 
@@ -134,7 +134,7 @@ def doGstep(j):
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	newGj = Gj.flatten()
 	oldGj = Gs[j, :]
-	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max() + 1e-100)))
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / (np.abs(oldGj).max() + 1e-100)))
 	Gs[j, :] = newGj
 	return delta
 
@@ -163,7 +163,7 @@ def doGstepSmooth(j):
 	Gs[j, :] = Gj.flatten()
 	newGj = Gj.flatten()
 	oldGj = Gsold[j, :]
-	delta = scipy.nanmax(np.abs((newGj - oldGj) / (oldGj.max() + 1e-100)))
+	delta = scipy.nanmax(np.abs((newGj - oldGj) / (np.abs(oldGj).max() + 1e-100)))
 	Gs[j, :] = newGj
 	return delta
 
