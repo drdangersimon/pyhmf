@@ -213,7 +213,8 @@ def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 def orthogonalize(G, A):
 	# do the orthogonalization and reordering
 	eigv, neweigvec = scipy.linalg.eigh(G.T * G)
-	neweigvec = neweigvec[:, ::-1]
+	sortind = np.argsort(-eigv)
+	neweigvec = neweigvec[:, sortind]
 		# reorder in descending eigv
 	newGs = (G * np.matrix(neweigvec))	# reproject
 	newAs = (A * np.matrix(neweigvec))
