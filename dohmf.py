@@ -160,7 +160,6 @@ def doGstepSmooth(j):
 			Gsold[npix - 2, :].T
 	del Covj
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
-	Gs[j, :] = Gj.flatten()
 	newGj = Gj.flatten()
 	oldGj = Gsold[j, :]
 	delta = scipy.nanmax(np.abs((newGj - oldGj) / (np.abs(oldGj).max() + 1e-100)))
@@ -231,15 +230,21 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
+
 	As = shared_zeros_matrix(ndat, ncomp)
 	Gs = copy_as_shared(vecs)
-
 	Gsold = shared_zeros_matrix(Gs.shape[0], Gs.shape[1])
-	data_struct.dat = dat
-	data_struct.edat = edat
+	
+	#arrays used for processing
 	data_struct.Gs = Gs
 	data_struct.Gsold = Gsold
 	data_struct.As = As
+
+	# input data
+	data_struct.dat = dat
+	data_struct.edat = edat
+
+	# parameters
 	data_struct.eps = eps
 	data_struct.ncomp = ncomp
 	data_struct.npix = npix
