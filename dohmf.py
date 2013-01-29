@@ -114,9 +114,13 @@ def doAstep(i):
 	dat, edat = data_struct.dat, data_struct.edat
 	Gs, As = data_struct.Gs, data_struct.As
 	Fi = np.matrix(dat[i] / edat[i] ** 2, copy=False) * Gs
-	Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
-	Gi = Gs.T * Covi * Gs
-	del Covi
+	
+	# Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
+	# Gi = Gs.T * Covi * Gs
+	# del Covi
+	Gi = Gs.T * np.matrix((1./edat[i]**2)[:,None] * np.asarray(Gs),copy=False)
+	
+	
 	Ai = scipy.linalg.solve(Gi, Fi.T, sym_pos=True)
 	newAi = Ai.flatten()
 	oldAi = As[i, :]
@@ -124,14 +128,20 @@ def doAstep(i):
 	As[i, :] = newAi
 	return delta
 
-
 def doGstep(j):
 
 	dat, edat = data_struct.dat, data_struct.edat
 	Gs, As = data_struct.Gs, data_struct.As
-	Covj = np.matrix(np.diag(1. / edat[:, j] ** 2), copy=False)
-	Aj = As.T * Covj * As
-	del Covj
+	
+	# Covj = np.matrix(np.diag(1. / edat[:, j] ** 2), copy=False)
+	# Aj = As.T * Covj * As
+	# del Covj
+	# the rewrite uses the fact that 
+	# diagonal matrix times matrix can be rewritten as 
+	# np.matrix(xs[:,None]*np.asarray(Gs)) ==
+	# np.matrix(np.diag(xs))*Gs
+	Aj = As.T * np.matrix((1. / edat[:, j] ** 2)[:,None] * np.asarray(As), copy=False)
+	
 	Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	newGj = Gj.flatten()
@@ -148,19 +158,29 @@ def doGstepSmooth(j):
 	ncomp = data_struct.ncomp
 	eps = data_struct.eps
 
-	Covj = np.matrix(np.diag(1. / edat[:, j] ** 2))
+
 	if j > 0 and j < (npix - 1):
-		Aj = As.T * Covj * As + 2 * eps * np.identity(ncomp)
+		mult = 2 
+	else:
+		mult = 1
+	# Covj = np.matrix(np.diag(1. / edat[:, j] ** 2))
+	# Aj = As.T * Covj * As + mult * eps * np.identity(ncomp)
+	# del Covj
+	# rewrite of less performant code 
+	Aj = As.T * np.matrix((1. / edat[:, j] ** 2)[:,None] * np.asarray(As), copy=False)
+	Aj[np.arange(ncomp),np.arange(ncomp)] = np.asarray(
+			Aj[np.arange(ncomp),np.arange(ncomp)]
+			+ (mult * eps) * np.ones(ncomp)
+			).flatten()
+	
+	if j > 0 and j < (npix - 1):
 		Fj = As.T * np.matrix(
 			(dat / edat ** 2)[:, j]).T + eps * (Gsold[j - 1, :] + Gsold[j + 1, :]).T
 	elif j == 0:
-		Aj = As.T * Covj * As + eps * np.identity(ncomp)
 		Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T + eps * Gsold[1, :].T
 	elif j == npix - 1:
-		Aj = As.T * Covj * As + eps * np.identity(ncomp)
 		Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T + eps * \
 			Gsold[npix - 2, :].T
-	del Covj
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	newGj = Gj.flatten()
 	oldGj = Gsold[j, :]
