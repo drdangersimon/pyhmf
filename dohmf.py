@@ -66,17 +66,19 @@ def project_only(dat, edat, vecs):
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
-	g0 = np.matrix(vecs)
-	# a step
-	As = np.matrix(np.zeros((ndat, ncomp)))
-	Gs = np.matrix(vecs)
+	Gs = np.matrix(vecs) 
+		# no need to make it fancy, we aren't going to change it
+	As = shared_zeros_matrix(ndat, ncomp)
+	data_struct.dat = dat
+	data_struct.edat = edat
+	data_struct.Gs = Gs
+	data_struct.As = As
 
-	for i in range(ndat):
-		Fi = np.matrix(dat[i] / edat[i] ** 2, copy=False) * Gs
-		Covi = np.matrix(np.diag(1. / edat[i] ** 2), copy=False)
-		Gi = Gs.T * Covi * Gs
-		Ai = scipy.linalg.solve(Gi, Fi.T)
-		As[i, :] = Ai.flatten()
+	pool = mp.Pool(config.nthreads)
+	deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
+	pool.close()
+	pool.join()
+	
 	return As
 
 
