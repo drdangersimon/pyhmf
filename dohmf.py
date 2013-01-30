@@ -62,7 +62,7 @@ def get_pca(arr):
 	return eigvals, eigvecs
 
 
-def project_only(dat, edat, vecs):
+def project_only(dat, edat, vecs, getChisq=False):
 	ncomp = vecs.shape[1]
 	ndat = len(dat)
 	npix = len(dat[0])
@@ -78,8 +78,13 @@ def project_only(dat, edat, vecs):
 	deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
 	pool.close()
 	pool.join()
-	
-	return As
+	if getChisq:
+		As = data_struct.As
+		chisqs=((np.array(dat-np.array((As * vecs.T)))/edat)**2).sum(axis=1)
+		ret = As, chisqs
+	else:
+		ret = As 
+	return ret
 
 
 def shared_zeros_matrix(n1, n2):
