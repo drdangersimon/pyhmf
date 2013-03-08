@@ -74,10 +74,14 @@ def project_only(dat, edat, vecs, getChisq=False):
 	data_struct.Gs = Gs
 	data_struct.As = As
 
-	pool = mp.Pool(config.nthreads)
-	deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
-	pool.close()
-	pool.join()
+	if config.nthreads>1:
+		pool = mp.Pool(config.nthreads)
+		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
+		pool.close()
+		pool.join()
+	else:
+		deltas1 = map(doAstep, range(ndat))
+
 	if getChisq:
 		As = data_struct.As
 		chisqs=((np.array(dat-np.array((As * vecs.T)))/edat)**2).sum(axis=1)
