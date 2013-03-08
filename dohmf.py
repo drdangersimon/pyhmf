@@ -183,13 +183,15 @@ def doGstepSmooth(j):
 			).flatten()
 	
 	if j > 0 and j < (npix - 1):
-		Fj = As.T * np.matrix(
-			(dat / edat ** 2)[:, j]).T + eps * (Gsold[j - 1, :] + Gsold[j + 1, :]).T
+		Fj = As.T * np.matrix(dat[:,j] / (edat[:,j]) ** 2, copy=False).T + \
+			eps * (Gsold[j - 1, :] + Gsold[j + 1, :]).T
 	elif j == 0:
-		Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T + eps * Gsold[1, :].T
+		Fj = As.T * np.matrix(dat[:,j] / (edat[:,j]) ** 2, copy=False).T + \
+			eps * Gsold[1, :].T
 	elif j == npix - 1:
-		Fj = As.T * np.matrix((dat[:,j] / (edat[:,j]) ** 2), copy=False).T + eps * \
-			Gsold[npix - 2, :].T
+		Fj = As.T * np.matrix(dat[:,j] / (edat[:,j]) ** 2, copy=False).T + \
+			eps * Gsold[npix - 2, :].T
+
 	Gj = scipy.linalg.solve(Aj, Fj, sym_pos=True)
 	newGj = Gj.flatten()
 	oldGj = Gsold[j, :]
