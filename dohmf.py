@@ -92,6 +92,8 @@ def project_only(dat, edat, vecs, getChisq=False):
 
 
 def shared_zeros_matrix(n1, n2):
+	if config.nthreads==1:
+		return np.matrix(np.zeros((n1,n2)), copy=False)
 	shared_array_base = mp.Array(ctypes.c_double, n1 * n2)
 	shared_array = np.ctypeslib.as_array(shared_array_base.get_obj())
 	shared_array = shared_array.reshape(n1, n2)
@@ -222,15 +224,8 @@ def get_hmf(dat, edat, vecs, nit=5, convergence=0.01):
 
 
 	for i in range(nit):
-		pool = mp.Pool(config.nthreads)
-		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
-		pool.close()
-		pool.join()
-		pool = mp.Pool(config.nthreads)
-		
-		deltas2 = pool.map(doGstep, range(npix), chunksize=config.chunksize)
-		pool.close()
-		pool.join()
+		deltas1 = mapper(doAstep, range(ndat))	
+		deltas2 = mapper(doGstep, range(npix))
 
 		curconv = scipy.nanmax([scipy.nanmax(deltas1), scipy.nanmax(deltas2)])
 		print curconv
@@ -252,6 +247,15 @@ def orthogonalize(G, A):
 	newAs = (A * np.matrix(neweigvec))
 	return newGs, newAs
 
+def mapper(func, dataset):
+	if config.nthreads>1:
+		pool = mp.Pool(config.nthreads)
+		result = pool.map(func, dataset, chunksize=config.chunksize)
+		pool.close()
+		pool.join()
+	else:
+		result = map(func, dataset)
+	return result
 
 def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 	"""
@@ -284,23 +288,15 @@ def get_hmf_smooth(dat, edat, vecs, nit=5, eps=0.01, convergence=0.01):
 
 	for i in range(nit):
 		# a step
-		pool = mp.Pool(config.nthreads)
-		deltas1 = pool.map(doAstep, range(ndat), chunksize=config.chunksize)
-		pool.close()
-		pool.join()
+		deltas1 = mapper(doAstep, range(ndat))	
 
 		data_struct.Gsold, data_struct.Gs = data_struct.Gs, data_struct.Gsold
 		# swapping variables, because we going to update Gs while still using
 		# original Gs from A step
 
-		# we restart the pool because of the variable swap
-		pool = mp.Pool(config.nthreads)
-
 		# g step
-		deltas2 = pool.map(
-			doGstepSmooth, range(npix), chunksize=config.chunksize)
-		pool.close()
-		pool.join()
+
+		deltas2 = mapper(doGstepSmooth, range(npix))	
 
 		curconv = scipy.nanmax([scipy.nanmax(deltas1), scipy.nanmax(deltas2)])
 		print curconv
